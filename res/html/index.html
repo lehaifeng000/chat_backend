@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@2.8.2/dist/alpine.min.js" defer></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.1.2/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+<div class="container mx-auto my-10" x-data="{
+    messages: [],
+    newMessage: '',
+    socket: null,
+    connect() {
+        this.socket = new WebSocket('ws://localhost:8000/ws');
+        this.socket.onmessage = (event) => {
+            this.messages.push(event.data);
+        };
+    },
+    sendMessage() {
+        if (this.newMessage.trim()) {
+            this.socket.send(this.newMessage);
+            this.newMessage = '';
+        }
+    }
+}" x-init="connect()">
+
+    <!-- Chat Window -->
+    <div class="bg-white p-5 rounded-lg shadow-lg">
+        <div class="h-64 overflow-y-scroll mb-4" id="chat-box">
+            <template x-for="message in messages" :key="message">
+                <div class="p-2 border-b" x-text="message"></div>
+            </template>
+        </div>
+
+        <!-- Input and Send Button -->
+        <div class="flex">
+            <input type="text" x-model="newMessage" class="flex-grow p-2 border rounded" placeholder="Type a message...">
+            <button @click="sendMessage" class="ml-2 bg-blue-500 text-white p-2 rounded">Send</button>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
