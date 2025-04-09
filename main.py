@@ -24,7 +24,7 @@ def main():
 
 @app.get("/chat")
 def chat():
-    return "mllm return msg";
+    return "mllm return msg"
 
 @app.post("/chat/send_message")
 async def send_message(text: str = Form(...), img: UploadFile = File(...)):
