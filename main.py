@@ -51,13 +51,15 @@ async def send_message(text: str = Form(...), img_name: str = Form(...)):
     img_path = UPLOAD_DIR+"/"+img_name
 
     # 推理
-    output = eval_question(model, tokenizer, image_processor, img_path, text)
-    print("111111")
+    output = eval_question(model, tokenizer, image_processor, img_path, text, save_dir=UPLOAD_DIR)
     print(output)
-
-    # 这里可以添加处理逻辑
+    ret = {}
+    if output['type'] == 'bbox':
+        ret['img_url'] = f"{prefix_url}{STATIC_URL}/{output['content']}"
+    else:
+        ret['text'] = output['content']
     # resp_text = "你的问题是:\""+ text+"\"\n,请稍后，正在处理..."
-    return {"text": output}
+    return ret
 
 @app.post("/chat/upload_img")
 async def upload_img(img: UploadFile = File(...)):

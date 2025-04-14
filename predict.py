@@ -1,9 +1,14 @@
 import argparse
 import torch
+import torch.nn.functional as F
 import os
 import json
 from tqdm import tqdm
 import shortuuid
+import uuid
+from pathlib import Path
+import re
+import ast
 import sys
 sys.path.append('/home/haifeng/code/SVE-Math')
 
@@ -13,9 +18,46 @@ from gllava.model.builder import load_pretrained_model
 from gllava.utils import disable_torch_init
 from gllava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import math
 from torchvision import transforms as T
+
+
+def is_bbox(line):
+    pattern = r"^\[(\s*(?:0|1)(?:\.\d+)?,\s*)*(?:0|1)(?:\.\d+)?\s*\]$"
+    return re.match(pattern, line) is not None
+
+def rescale_bbox(bbox, image):
+    h = image.height
+    w = image.width
+    print("h:{} w:{}".format(h, w))
+
+    adjusted_bbox = bbox[:]  # 创建 bbox 的副本，避免修改原始列表
+
+    if h > w:
+        adjusted_bbox[0] *= h  # x1
+        adjusted_bbox[2] *= h  # x2
+        adjusted_bbox[0] -= (h - w) // 2
+        adjusted_bbox[2] -= (h - w) // 2
+        adjusted_bbox[1] *= h  # y1
+        adjusted_bbox[3] *= h  # y2
+
+    else:
+        adjusted_bbox[0] *= w  # x1
+        adjusted_bbox[2] *= w  # x2
+        adjusted_bbox[1] *= w  # y1
+        adjusted_bbox[3] *= w  # y2
+        adjusted_bbox[1] -= (w - h) // 2
+        adjusted_bbox[3] -= (w - h) // 2
+
+    # 确保坐标非负 (模拟 ReLU)
+    for i in range(len(adjusted_bbox)):
+        adjusted_bbox[i] = max(0, adjusted_bbox[i])
+
+    return adjusted_bbox
+
+
+
 def build_transform():
     PIXEL_MEAN=[103.53, 116.28, 123.675]
     PIXEL_STD=[57.375, 57.12, 58.395]
@@ -59,7 +101,7 @@ def process_images(image, image_processor, model_cfg):
 
 def gen_model():
     disable_torch_init()
-    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math/checkpoint/SVE-llava-Qwen2.5-7B')
+    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math/checkpoint_new/SVE-llava-deepseek-7B')
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,4, 'cross_channel')
 
@@ -67,7 +109,7 @@ def gen_model():
 
     
 
-def eval_question(model, tokenizer, image_processor, image, question, conv_mode="qwen_2", temperature=0):
+def eval_question(model, tokenizer, image_processor, image, question, conv_mode="qwen_2", temperature=0, save_dir=""):
     disable_torch_init()
     # image_file = item["image"]
     # # 暂时使用拼接路径，后续img需要传入
@@ -116,14 +158,31 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
     if outputs.endswith(stop_str):
         outputs = outputs[:-len(stop_str)]
     outputs = outputs.strip()
-
     print(outputs)
-    return outputs
+    print(is_bbox(outputs))
+    output_type = "text"
+    output_content = outputs
+    if is_bbox(outputs):
+        output_type = "bbox"
+        draw = ImageDraw.Draw(image_PIL)
+        scale_bbox = ast.literal_eval(outputs)
+        bbox = rescale_bbox(scale_bbox, image_PIL)
+        draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="blue", width=2)
+        print(bbox)
+        unique_filename = f"gen_{uuid.uuid4()}.jpg"
+        output_content = unique_filename
+        file_path = Path(save_dir) / unique_filename
+        image_PIL.save(str(file_path))
+    return {"type": output_type, "content": output_content}
 
 if __name__ == "__main__":
     model, tokenizer, image_processor = gen_model()
-    image = "/home/haifeng/code/SVE-Math/playground/Geo170K/images/test/0.png"
-    question = "\nFirst perform reasoning, then finally select the question from the choices in the following format: Answer: xxx.\nQuestion:As shown in the figure, in triangle ABC, it is known that angle A = 80.0, angle B = 60.0, DE parallel  BC, then the size of angle CED is ()\nChoices:\nA:40\u00b0\nB:60\u00b0\nC:120\u00b0\nD:140\u00b0"
-    
+    # image = "/home/haifeng/code/SVE-Math/playground/Geo170K/images/test/0.png"
+    # image = "/home/haifeng/code/tmp/tri2.png"
+    image = "/home/haifeng/code/SVE-Math/mathglance/benchmark/data_final/mathscope/easy/images/final_construction_sample_13.png"
+
+    # question = "\nFirst perform reasoning, then finally select the question from the choices in the following format: Answer: xxx.\nQuestion:As shown in the figure, in triangle ABC, it is known that angle A = 80.0, angle B = 60.0, DE parallel  BC, then the size of angle CED is ()\nChoices:\nA:40\u00b0\nB:60\u00b0\nC:120\u00b0\nD:140\u00b0"
+    question = "Please provide the bounding box coordinate of the region this sentence describes: triangle ABC."
     print("----------- 开始推理 -----------")
-    # predict(model, tokenizer, image_processor, image, question)
+    eval_question(model, tokenizer, image_processor, image, question)
+    
