@@ -52,7 +52,7 @@ def rescale_bbox(bbox, image):
 
     # 确保坐标非负 (模拟 ReLU)
     for i in range(len(adjusted_bbox)):
-        adjusted_bbox[i] = max(0, adjusted_bbox[i])
+        adjusted_bbox[i] = int(max(0, adjusted_bbox[i]))
 
     return adjusted_bbox
 
@@ -113,7 +113,11 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
     disable_torch_init()
     # image_file = item["image"]
     # # 暂时使用拼接路径，后续img需要传入
-    image_PIL = Image.open(image).convert("RGB")
+    if image is None:
+        # 创建一个空白图像
+        image_PIL = Image.new("RGB", (480, 480), (255, 255, 255))
+    else:
+        image_PIL = Image.open(image).convert("RGB")
     image_tensor,image_glip = process_images(
         image_PIL,
         image_processor,
@@ -162,6 +166,7 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
     print(is_bbox(outputs))
     output_type = "text"
     output_content = outputs
+    ret = {}
     if is_bbox(outputs):
         output_type = "bbox"
         draw = ImageDraw.Draw(image_PIL)
@@ -170,10 +175,15 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
         draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="blue", width=2)
         print(bbox)
         unique_filename = f"gen_{uuid.uuid4()}.jpg"
-        output_content = unique_filename
+        # output_content = unique_filename
         file_path = Path(save_dir) / unique_filename
         image_PIL.save(str(file_path))
-    return {"type": output_type, "content": output_content}
+        ret["text"] = "The bounding box coordinate is" + str(bbox)
+        ret["img_name"] = unique_filename
+    else:
+        ret["text"] = outputs
+    ret["type"] = output_type
+    return ret
 
 if __name__ == "__main__":
     model, tokenizer, image_processor = gen_model()

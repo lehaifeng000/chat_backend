@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from PIL import Image
+from typing import Optional
 
 import os
 import uuid
@@ -44,20 +45,23 @@ def chat():
     return "mllm return msg"
 
 @app.post("/chat/send_message")
-async def send_message(text: str = Form(...), img_name: str = Form(...)):
+async def send_message(text: str = Form(...), img_name: Optional[str] = Form(None)):
     print("收到消息：", text)
     print("收到图片：", img_name)
     # img_url替换成路径
-    img_path = UPLOAD_DIR+"/"+img_name
+    img_path = None
+    if img_name:
+        img_path = UPLOAD_DIR+"/"+img_name
 
     # 推理
     output = eval_question(model, tokenizer, image_processor, img_path, text, save_dir=UPLOAD_DIR)
     print(output)
     ret = {}
     if output['type'] == 'bbox':
-        ret['img_url'] = f"{prefix_url}{STATIC_URL}/{output['content']}"
+        ret['img_url'] = f"{prefix_url}{STATIC_URL}/{output['img_name']}"
+        ret['text'] = output['text']
     else:
-        ret['text'] = output['content']
+        ret['text'] = output['text']
     # resp_text = "你的问题是:\""+ text+"\"\n,请稍后，正在处理..."
     return ret
 
