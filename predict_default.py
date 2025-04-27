@@ -174,29 +174,30 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
     if outputs.endswith(stop_str):
         outputs = outputs[:-len(stop_str)]
     outputs = outputs.strip()
-    print(outputs)
-    print(is_bbox(outputs))
-    output_type = "text"
-    output_content = outputs
-    ret = {}
-    if is_bbox(outputs):
-        output_type = "bbox"
-        image_PIL = Image.open(image).convert("RGB")
-        draw = ImageDraw.Draw(image_PIL)
-        scale_bbox = ast.literal_eval(outputs)
-        bbox = rescale_bbox(scale_bbox, image_PIL)
-        draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="red", width=5)
-        print(bbox)
-        unique_filename = f"gen_{uuid.uuid4()}.jpg"
-        # output_content = unique_filename
-        file_path = Path(save_dir) / unique_filename
-        image_PIL.save(str(file_path))
-        ret["text"] = "The bounding box coordinate is" + str(bbox)
-        ret["img_name"] = unique_filename
-    else:
-        ret["text"] = outputs
-    ret["type"] = output_type
-    return ret
+    return outputs
+    # print(outputs)
+    # print(is_bbox(outputs))
+    # output_type = "text"
+    # output_content = outputs
+    # ret = {}
+    # if is_bbox(outputs):
+    #     output_type = "bbox"
+    #     image_PIL = Image.open(image).convert("RGB")
+    #     draw = ImageDraw.Draw(image_PIL)
+    #     scale_bbox = ast.literal_eval(outputs)
+    #     bbox = rescale_bbox(scale_bbox, image_PIL)
+    #     draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="red", width=5)
+    #     print(bbox)
+    #     unique_filename = f"gen_{uuid.uuid4()}.jpg"
+    #     # output_content = unique_filename
+    #     file_path = Path(save_dir) / unique_filename
+    #     image_PIL.save(str(file_path))
+    #     ret["text"] = "The bounding box coordinate is" + str(bbox)
+    #     ret["img_name"] = unique_filename
+    # else:
+    #     ret["text"] = outputs
+    # ret["type"] = output_type
+    # return ret
 
 if __name__ == "__main__":
     model, tokenizer, image_processor = gen_model()

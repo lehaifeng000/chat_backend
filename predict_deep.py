@@ -10,14 +10,13 @@ from pathlib import Path
 import re
 import ast
 import sys
-sys.path.append('/home/haifeng/code/SVE-Math-Qwen2_5')
+sys.path.append('/home/haifeng/code/SVE-Math')
 
 from gllava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from gllava.conversation import conv_templates, SeparatorStyle
 from gllava.model.builder import load_pretrained_model
 from gllava.utils import disable_torch_init
 from gllava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria
-from qwen_vl_utils import process_vision_info
 
 from PIL import Image, ImageDraw
 import math
@@ -26,8 +25,7 @@ from torchvision import transforms as T
 prompt_choice = {
     "none": "",
     "wo": "\nPlease directly answer the question.\nQuestion: ",
-    "cot": "\nPlease first conduct reasoning, and then answer the question.\nQuestion: ",
-    "multimath": "\nPlease reason step by step, and put your final answer within \\boxed{}.\nEach step is placed on a new line, using the following format: \nStep X (Mathematical theorem/basis used): Detailed solution steps. \nAnswer: \\boxed{}"
+    "cot": "\nPlease first conduct reasoning, and then answer the question.\nQuestion: "
 }
 #and provide the correct option letter, e.g., A, B, C, D
 #and provide the correct option letter, e.g., A, B, C, D, at the end
@@ -109,65 +107,63 @@ def process_images(image, image_processor, model_cfg):
 
 def gen_model():
     disable_torch_init()
-    # model_path = os.path.expanduser('/home/haifeng/code/SVE-Math-Qwen2_5/checkpoints/Qwen2.5-VL-7B-unfre_geoglip_math360k_align2_sft+geodet')
-    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math-Qwen2_5/checkpoints/Qwen2.5-VL-7B-2mlp_trainglip+sft+geodet+deduction05')
+    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math/checkpoint/SVE-llava-deepseek-7B')
     model_name = get_model_name_from_path(model_path)
-    # tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,4,  'cross_channel' )
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,num_of_kvs=4,
-        merge_version='cross_channel')
+    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,4,  'cross_channel' )
 
     return model, tokenizer, image_processor
 
     
 
-def eval_question(model, tokenizer, image_processor, image, question, conv_mode="qwen_2", temperature=0, save_dir=""):
+def eval_question(model, tokenizer, image_processor, image, question, conv_mode="llava_deepsk", temperature=0, save_dir=""):
     disable_torch_init()
-    qs = question
-    cur_prompt = qs
-    # qs = f"{question}\n"
-    # cur_prompt = prompt_choice['multimath']+qs
+    # image_file = item["image"]
+    # # 暂时使用拼接路径，后续img需要传入
     if image is None:
-        image = '/home/haifeng/code/web/chat_backend/blank.jpg'
-    messages = [
-    {
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "image": f"{image}",
-                "resized_width":model.config.image_resized_width,
-                "resized_height":model.config.image_resized_height,
-            },
-            {"type": "text", "text": cur_prompt},
-        ],
-    }]
-    image_inputs, video_inputs = process_vision_info(messages) 
-    prompt = image_processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True) 
-    # prompt = copy.deepcopy(llava_to_openai(prompt['conversations']))
-    inputs = image_processor(text=[prompt],images=image_inputs,videos=video_inputs,padding=True,return_tensors="pt")
-    inputs = inputs.to("cuda").to(torch.bfloat16)
+        # 创建一个空白图像
+        image_PIL = Image.new("RGB", (480, 480), (0, 0, 0))
+    else:
+        image_PIL = Image.open(image).convert("RGB")
+    image_tensor,image_glip = process_images(
+        image_PIL,
+        image_processor,
+        model.config
+    )
+    # qs = question
+    qs = f"{question}\n"
+    qs = prompt_choice['cot']+qs
+    if model.config.mm_use_im_start_end:
+        qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
+    else:
+        qs = DEFAULT_IMAGE_TOKEN + '\n' + qs
 
-    input_ids = inputs['input_ids']
-    inputs['image_glip']=inputs['image_glip'].unsqueeze(0)
+    conv = conv_templates[conv_mode].copy()
+    conv.append_message(conv.roles[0], qs)
+    conv.append_message(conv.roles[1], None)
+    prompt = conv.get_prompt()
+
+    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
+
+    stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+    keywords = [stop_str]
+    stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
 
     with torch.inference_mode():
         output_ids = model.generate(
-            **inputs,
+            input_ids,
+            images=image_tensor.unsqueeze(0).to(torch.bfloat16).cuda(),
+            image_glips=image_glip.unsqueeze(0).to(torch.bfloat16).cuda(),
             do_sample=True if temperature > 0 else False,
             temperature=temperature,
             top_p=None,
             num_beams=1,
             # no_repeat_ngram_size=3,
-            max_new_tokens=2048,
+            max_new_tokens=1024,
             use_cache=True)
-    # outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+
     input_token_len = input_ids.shape[1]
-    stop_str = "<|im_end|>" 
     n_diff_input_output = (input_ids != output_ids[:, :input_token_len]).sum().item()
     if n_diff_input_output > 0:
-        output_ids = [
-            out_ids[len(in_ids):] for in_ids, out_ids in zip(input_ids, output_ids)
-        ]
         print(f'[Warning] {n_diff_input_output} output_ids are not the same as the input_ids')
     outputs = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=True)[0]
     outputs = outputs.strip()
@@ -181,7 +177,6 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
     ret = {}
     if is_bbox(outputs):
         output_type = "bbox"
-        image_PIL = Image.open(image).convert("RGB")
         draw = ImageDraw.Draw(image_PIL)
         scale_bbox = ast.literal_eval(outputs)
         bbox = rescale_bbox(scale_bbox, image_PIL)
@@ -202,14 +197,10 @@ if __name__ == "__main__":
     model, tokenizer, image_processor = gen_model()
     # image = "/home/haifeng/code/SVE-Math/playground/Geo170K/images/test/0.png"
     # image = "/home/haifeng/code/tmp/tri2.png"
-    # image = "/home/haifeng/code/SVE-Math/mathglance/benchmark/data_final/mathscope/easy/images/final_construction_sample_13.png"
+    image = "/home/haifeng/code/SVE-Math/mathglance/benchmark/data_final/mathscope/easy/images/final_construction_sample_13.png"
 
     # question = "\nFirst perform reasoning, then finally select the question from the choices in the following format: Answer: xxx.\nQuestion:As shown in the figure, in triangle ABC, it is known that angle A = 80.0, angle B = 60.0, DE parallel  BC, then the size of angle CED is ()\nChoices:\nA:40\u00b0\nB:60\u00b0\nC:120\u00b0\nD:140\u00b0"
-    # question = "Please provide the bounding box coordinate of the region this sentence describes: triangle ABC."
-    # image = "/home/haifeng/code/web/chat_backend/tmp/ellipse1.jpg"
-    # question = "Please provide the bounding box coordinate of the region this sentence describes: ellipse L."
-    image = None
-    question ='can you help me sovle the geo problems?'
+    question = "Please provide the bounding box coordinate of the region this sentence describes: triangle ABC."
     print("----------- 开始推理 -----------")
-    eval_question(model, tokenizer, image_processor, image, question, temperature=0.2)
+    eval_question(model, tokenizer, image_processor, image, question)
     

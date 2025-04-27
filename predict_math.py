@@ -110,7 +110,7 @@ def process_images(image, image_processor, model_cfg):
 def gen_model():
     disable_torch_init()
     # model_path = os.path.expanduser('/home/haifeng/code/SVE-Math-Qwen2_5/checkpoints/Qwen2.5-VL-7B-unfre_geoglip_math360k_align2_sft+geodet')
-    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math-Qwen2_5/checkpoints/Qwen2.5-VL-7B-2mlp_trainglip+sft+geodet+deduction05')
+    model_path = os.path.expanduser('/home/haifeng/code/SVE-Math-Qwen2_5/checkpoints/Qwen2.5-VL-7B-336-mathvision')#mathmodel mathvision
     model_name = get_model_name_from_path(model_path)
     # tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,4,  'cross_channel' )
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, None, model_name,num_of_kvs=4,
@@ -122,10 +122,10 @@ def gen_model():
 
 def eval_question(model, tokenizer, image_processor, image, question, conv_mode="qwen_2", temperature=0, save_dir=""):
     disable_torch_init()
-    qs = question
-    cur_prompt = qs
-    # qs = f"{question}\n"
-    # cur_prompt = prompt_choice['multimath']+qs
+    # qs = question
+    # cur_prompt = qs
+    qs = f"{question}\n"
+    cur_prompt = prompt_choice['multimath']+qs
     if image is None:
         image = '/home/haifeng/code/web/chat_backend/blank.jpg'
     messages = [
@@ -175,28 +175,29 @@ def eval_question(model, tokenizer, image_processor, image, question, conv_mode=
         outputs = outputs[:-len(stop_str)]
     outputs = outputs.strip()
     print(outputs)
-    print(is_bbox(outputs))
-    output_type = "text"
-    output_content = outputs
-    ret = {}
-    if is_bbox(outputs):
-        output_type = "bbox"
-        image_PIL = Image.open(image).convert("RGB")
-        draw = ImageDraw.Draw(image_PIL)
-        scale_bbox = ast.literal_eval(outputs)
-        bbox = rescale_bbox(scale_bbox, image_PIL)
-        draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="red", width=5)
-        print(bbox)
-        unique_filename = f"gen_{uuid.uuid4()}.jpg"
-        # output_content = unique_filename
-        file_path = Path(save_dir) / unique_filename
-        image_PIL.save(str(file_path))
-        ret["text"] = "The bounding box coordinate is" + str(bbox)
-        ret["img_name"] = unique_filename
-    else:
-        ret["text"] = outputs
-    ret["type"] = output_type
-    return ret
+    return outputs
+    # print(is_bbox(outputs))
+    # output_type = "text"
+    # output_content = outputs
+    # ret = {}
+    # if is_bbox(outputs):
+    #     output_type = "bbox"
+    #     image_PIL = Image.open(image).convert("RGB")
+    #     draw = ImageDraw.Draw(image_PIL)
+    #     scale_bbox = ast.literal_eval(outputs)
+    #     bbox = rescale_bbox(scale_bbox, image_PIL)
+    #     draw.rectangle([(bbox[0], bbox[1]), (bbox[2], bbox[3])], outline="red", width=5)
+    #     print(bbox)
+    #     unique_filename = f"gen_{uuid.uuid4()}.jpg"
+    #     # output_content = unique_filename
+    #     file_path = Path(save_dir) / unique_filename
+    #     image_PIL.save(str(file_path))
+    #     ret["text"] = "The bounding box coordinate is" + str(bbox)
+    #     ret["img_name"] = unique_filename
+    # else:
+    #     ret["text"] = outputs
+    # ret["type"] = output_type
+    # return ret
 
 if __name__ == "__main__":
     model, tokenizer, image_processor = gen_model()
@@ -208,8 +209,10 @@ if __name__ == "__main__":
     # question = "Please provide the bounding box coordinate of the region this sentence describes: triangle ABC."
     # image = "/home/haifeng/code/web/chat_backend/tmp/ellipse1.jpg"
     # question = "Please provide the bounding box coordinate of the region this sentence describes: ellipse L."
-    image = None
-    question ='can you help me sovle the geo problems?'
+    image = "/home/haifeng/code/SVE-Math/playground/MathVerse/images/images_version_1-4/image_245.png"
+    question ="The diagonals of rhombus F G H J intersect at K. If GH = x + 9 and JH = 5x - 2, find x."
+    # question ="descripe the image in details"
+    # question ="how can i draw the image?"
     print("----------- 开始推理 -----------")
-    eval_question(model, tokenizer, image_processor, image, question, temperature=0.2)
+    eval_question(model, tokenizer, image_processor, image, question, temperature=0.)
     
